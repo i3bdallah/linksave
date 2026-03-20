@@ -1,0 +1,23 @@
+{
+  "name": "linksave",
+  "version": "1.0.0",
+  "description": "Export your LinkedIn saved posts to Markdown, JSON, and a searchable HTML viewer",
+  "type": "module",
+  "bin": {
+    "linksave": "./src/index.js"
+  },
+  "keywords": [
+    "linkedin",
+    "bookmarks",
+    "saved-posts",
+    "exporter",
+    "cli"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}

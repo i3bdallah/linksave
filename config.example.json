@@ -1,0 +1,6 @@
+{
+  "li_at": "PASTE_YOUR_COOKIE_HERE",
+  "output_dir": "./bookmarks",
+  "scroll_delay_ms": 1500,
+  "max_scrolls": 50
+}
