@@ -7,7 +7,7 @@ LinkedIn doesn't offer a way to export your bookmarked posts. **linksave** launc
 ## Quick start
 
 ```bash
-git clone https://github.com/yourusername/linksave.git
+git clone https://github.com/i3bdallah/linksave.git
 cd linksave
 npm install
 npx playwright install chromium
