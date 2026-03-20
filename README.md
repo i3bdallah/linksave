@@ -2,6 +2,9 @@
 
 Export your LinkedIn saved posts to Markdown, JSON, and a searchable HTML viewer.
 
+<img width="391" height="111" alt="image" src="https://github.com/user-attachments/assets/acae0ea2-b43b-46e9-8c73-22ae4524be9f" />
+
+
 LinkedIn doesn't offer a way to export your bookmarked posts. **linksave** launches a headless browser, scrolls through your saved posts, and exports everything locally — with incremental deduplication so re-runs only save new posts.
 
 ## Quick start
