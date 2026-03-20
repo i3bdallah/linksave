@@ -29,6 +29,12 @@ node src/index.js
 
 That's it. Your saved posts are now in `./bookmarks/`.
 
+To force a full re-download (clears state and rebuilds everything):
+
+```bash
+node src/index.js --all
+```
+
 ## Getting your `li_at` cookie
 
 1. Open [linkedin.com](https://www.linkedin.com) in your browser and log in
@@ -67,7 +73,7 @@ Three files are generated in the output directory:
 4. Deduplicates against previously saved posts (tracked in `.state.json`)
 5. Merges new posts into the three output formats
 
-Re-runs are incremental — only new posts are added.
+Re-runs are incremental — only new posts are added. Use `--all` to clear state and re-download everything.
 
 ## Global install
 

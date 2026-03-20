@@ -7,6 +7,25 @@ import path from 'path';
 
 const SAVED_POSTS_URL = 'https://www.linkedin.com/my-items/saved-posts/';
 
+// Convert LinkedIn relative timestamps ("2d", "3w", "1mo", "1yr") to approximate ISO dates.
+function relativeToDate(relative, now = new Date()) {
+  const match = relative.match(/^(\d+)\s*(s|m|h|d|w|mo|yr)$/);
+  if (!match) return null;
+  const [, num, unit] = match;
+  const n = parseInt(num, 10);
+  const d = new Date(now);
+  switch (unit) {
+    case 's':  d.setSeconds(d.getSeconds() - n); break;
+    case 'm':  d.setMinutes(d.getMinutes() - n); break;
+    case 'h':  d.setHours(d.getHours() - n); break;
+    case 'd':  d.setDate(d.getDate() - n); break;
+    case 'w':  d.setDate(d.getDate() - n * 7); break;
+    case 'mo': d.setMonth(d.getMonth() - n); break;
+    case 'yr': d.setFullYear(d.getFullYear() - n); break;
+  }
+  return d.toISOString().split('T')[0];
+}
+
 // Write data atomically: write to a temp file in the same directory, then rename.
 // Keeps a .bak of the previous version if one exists.
 function atomicWrite(filePath, data) {
@@ -44,10 +63,12 @@ const startTime = performance.now();
 const elapsed = () => `${c.dim}(${((performance.now() - startTime) / 1000).toFixed(1)}s)${c.reset}`;
 
 // ── Banner ──────────────────────────────────────────────────────────
-console.log('');
-console.log(`  ${c.bold}linksave${c.reset}  ${c.dim}— Export your LinkedIn saved posts${c.reset}`);
-console.log(`  ${c.dim}${'─'.repeat(43)}${c.reset}`);
-console.log('');
+console.log(`
+${c.cyan}    ╦  ╦╔╗╔╦╔═╔═╗╔═╗╦  ╦╔═╗
+    ║  ║║║║╠╩╗╚═╗╠═╣╚╗╔╝║╣
+    ╩═╝╩╝╚╝╩ ╩╚═╝╩ ╩ ╚╝ ╚═╝${c.reset}
+    ${c.dim}v1.0  Export your LinkedIn saved posts${c.reset}
+`);
 
 // ── Load config ─────────────────────────────────────────────────────
 let config;
@@ -70,11 +91,21 @@ const outputDir = config.output_dir || './bookmarks';
 const scrollDelay = config.scroll_delay_ms || 1500;
 const maxScrolls = config.max_scrolls || 50;
 
+// ── Parse CLI flags ─────────────────────────────────────────────────
+const forceAll = process.argv.includes('--all');
+
+if (forceAll) {
+  log.warn('--all flag detected — clearing state and re-downloading everything');
+  try { fs.unlinkSync('.state.json'); } catch { /* nothing to clear */ }
+  const jsonFile = path.join(outputDir, 'bookmarks.json');
+  try { fs.unlinkSync(jsonFile); } catch { /* nothing to clear */ }
+}
+
 // ── Load dedup state ────────────────────────────────────────────────
 let seen = [];
 try {
   seen = JSON.parse(fs.readFileSync('.state.json', 'utf-8'));
-} catch { /* first run */ }
+} catch { /* first run or cleared */ }
 const seenSet = new Set(seen);
 
 // ── Launch browser ──────────────────────────────────────────────────
@@ -113,8 +144,19 @@ try {
   log.ok('Authenticated');
 
   // ── Scroll to load posts ──────────────────────────────────────
+  // Build a set of known URNs from state so we can stop scrolling early.
+  // State keys are URLs like "https://www.linkedin.com/feed/update/urn:li:..."
+  // or fallback keys like "author::text". Extract URNs from URLs.
+  const knownUrns = new Set();
+  for (const k of seenSet) {
+    const match = k.match(/\/feed\/update\/(.+)$/);
+    if (match) knownUrns.add(match[1]);
+  }
+  const isFirstRun = knownUrns.size === 0;
+
   let prevHeight = 0;
   let scrollCount = 0;
+  let stoppedEarly = false;
 
   for (let i = 0; i < maxScrolls; i++) {
     scrollCount = i + 1;
@@ -127,6 +169,21 @@ try {
       process.stdout.write(`\r${c.cyan}▸${c.reset} Scrolling ${c.dim}(${scrollCount}/${maxScrolls})${c.reset} — ${c.bold}${loadedCount}${c.reset} posts loaded`);
     }
 
+    // On incremental runs, check if the latest loaded posts are all already known.
+    // LinkedIn shows newest-first, so once we hit known posts, the rest are too.
+    if (!isFirstRun && scrollCount >= 2) {
+      const urns = await page.$$eval('[data-chameleon-result-urn]', els =>
+        els.slice(-6).map(el => el.getAttribute('data-chameleon-result-urn'))
+      );
+      const allKnown = urns.length > 0 && urns.every(u => knownUrns.has(u));
+      if (allKnown) {
+        if (isTTY) process.stdout.write('\n');
+        log.ok(`Reached known posts after ${scrollCount} scrolls — ${c.bold}${loadedCount}${c.reset} loaded`);
+        stoppedEarly = true;
+        break;
+      }
+    }
+
     if (newHeight === prevHeight) {
       if (isTTY) process.stdout.write('\n');
       log.ok(`Reached end after ${scrollCount} scrolls — ${c.bold}${loadedCount}${c.reset} posts loaded`);
@@ -134,7 +191,7 @@ try {
     }
     prevHeight = newHeight;
   }
-  if (scrollCount === maxScrolls) {
+  if (!stoppedEarly && scrollCount === maxScrolls) {
     if (isTTY) process.stdout.write('\n');
     log.warn(`Hit max scroll limit (${maxScrolls})`);
   }
@@ -233,9 +290,11 @@ try {
   fs.mkdirSync(outputDir, { recursive: true });
   const today = new Date().toISOString().split('T')[0];
 
-  // Tag new posts with saved date and update dedup state
+  // Tag new posts with dates and update dedup state
+  const now = new Date();
   for (const p of newPosts) {
     p.saved = today;
+    p.postDate = relativeToDate(p.timestamp, now) || today;
     seenSet.add(key(p));
   }
 
@@ -262,7 +321,7 @@ try {
       '---', '',
       p.author ? `**${p.author}**` : '',
       p.headline ? `*${p.headline}*` : '',
-      p.timestamp ? `📅 ${p.timestamp} — saved ${p.saved}` : `📅 saved ${p.saved}`,
+      p.postDate ? `📅 ~${p.postDate}` : `📅 saved ${p.saved}`,
       '', p.postText || '*(no text extracted)*', '',
       p.url ? `🔗 [Original post](${p.url})` : '',
     ];
